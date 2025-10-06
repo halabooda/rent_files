@@ -116,10 +116,6 @@ func Serve() {
 		SetupPprof(mux)
 	}
 
-	mux.Handle("/demo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./demo/index.html")
-	}))
-
 	mux.Handle("/list/{bucket}/{recordId}/{filename}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		path := strings.TrimPrefix(r.URL.Path, "/list/")
@@ -345,7 +341,7 @@ func getCorsConfig() *tushandler.CorsConfig {
 		config.ExposeHeaders += ", " + Flags.CorsExposeHeaders
 	}
 
-	log.Stdout.Println("Maksssss", &config)
+	log.Stdout.Println("Cors settings", &config)
 
 	return &config
 }

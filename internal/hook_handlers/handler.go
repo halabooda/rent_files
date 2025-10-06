@@ -15,7 +15,7 @@ type Handler struct {
 func NewHandler(s3Endpoint string) *Handler {
 	config := appconfig.AppConfig{
 		JwtSecret:    os.Getenv("JWT_SECRET"),
-		ResultBucket: os.Getenv("CODIEW_RECORD_BUCKET"),
+		ResultBucket: os.Getenv("RECORD_BUCKET"),
 
 		S3Endpoint: s3Endpoint,
 	}
@@ -23,9 +23,9 @@ func NewHandler(s3Endpoint string) *Handler {
 
 	return &Handler{
 		handlers: []hooks.HookHandler{
-			//NewAuthHandler(config),
+			NewAuthHandler(config),
 			//NewFinishHandler(config),
-			//NewSingleAudioRecordHandler(config),
+			NewMoveHandler(config),
 			NewFfmpegConvertHandler(config),
 		},
 	}
