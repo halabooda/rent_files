@@ -20,6 +20,8 @@ import (
 	"golang.org/x/exp/slog"
 )
 
+const SwampDir = "rent_swamp"
+
 type MoveHandler struct {
 	config   appConfig.AppConfig
 	s3Client *s3.Client
@@ -102,7 +104,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 */
 func (g *MoveHandler) move(ctx context.Context, uploadId, recordID, filename, contentType string, replace string) error {
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String("test"),
+		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
 	})
 
