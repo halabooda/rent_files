@@ -14,9 +14,7 @@ type Handler struct {
 
 func NewHandler(s3Endpoint string) *Handler {
 	config := appconfig.AppConfig{
-		//SupabaseApiURL:        os.Getenv("SUPABASE_API_URL"),
-		//SupabaseApiServiceKey: os.Getenv("SUPABASE_API_SERVICEKEY"),
-		//SupabaseJwtSecret:     os.Getenv("SUPABASE_JWT_SECRET"),
+		JwtSecret:    os.Getenv("JWT_SECRET"),
 		ResultBucket: os.Getenv("CODIEW_RECORD_BUCKET"),
 
 		S3Endpoint: s3Endpoint,

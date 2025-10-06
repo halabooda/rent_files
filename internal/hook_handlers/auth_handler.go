@@ -34,18 +34,13 @@ func (g *AuthHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		return res, nil
 	}
 
-	triggerToken, ok := req.Event.HTTPRequest.Header["Trigger-Token"]
-	if ok && len(triggerToken) > 0 && triggerToken[0] == triggerTokenToken {
-		return res, nil
-	}
-
 	uploadToken, ok2 := req.Event.HTTPRequest.Header["Upload-Token"]
 	if !ok2 || len(uploadToken) < 1 {
 		g.errorResponse(&res)
 		return res, nil
 	}
 
-	token, err := parseToken(uploadToken[0], []byte(g.config.SupabaseJwtSecret))
+	token, err := parseToken(uploadToken[0], []byte(g.config.JwtSecret))
 	if err != nil || token == nil {
 		g.errorResponse(&res)
 		return res, nil

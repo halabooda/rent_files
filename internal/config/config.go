@@ -18,10 +18,8 @@ type S3ClientConfig struct {
 }
 
 type AppConfig struct {
-	SupabaseApiURL        string
-	SupabaseApiServiceKey string
-	SupabaseJwtSecret     string
-	S3Endpoint            string
+	JwtSecret  string
+	S3Endpoint string
 
 	ResultBucket string
 }
