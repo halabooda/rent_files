@@ -85,6 +85,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 	uploadId, _ := splitIds(id)
 
 	slog.Info(
+		"debug move info",
 		"filename", filename,
 		"contentType", contentType,
 		"userID", userID,
