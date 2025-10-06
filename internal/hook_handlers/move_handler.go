@@ -81,15 +81,17 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		contentType = ""
 	}
 
-	replace, ok := req.Event.Upload.MetaData["replace"]
-	if !ok {
-		replace = ""
-	}
-
 	id := req.Event.Upload.ID
 	uploadId, _ := splitIds(id)
 
-	err = g.move(context.Background(), uploadId, userID, filename, contentType, replace)
+	slog.Info(
+		"filename", filename,
+		"contentType", contentType,
+		"userID", userID,
+		"uploadId", uploadId,
+	)
+
+	err = g.move(context.Background(), uploadId, userID, filename, contentType)
 
 	if err != nil {
 		slog.Error("Move failed", "err", err.Error())
@@ -102,7 +104,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 /*
 Перемещаем все наши записи в /{userID}/... файлы записями
 */
-func (g *MoveHandler) move(ctx context.Context, uploadId, userID, filename, contentType string, replace string) error {
+func (g *MoveHandler) move(ctx context.Context, uploadId, userID, filename, contentType string) error {
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
@@ -121,10 +123,6 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, userID, filename, cont
 	_, err = file.Seek(0, 0)
 	if err != nil {
 		return err
-	}
-
-	if replace != "" {
-		g.deleteExists(ctx, userID, replace)
 	}
 
 	params := &s3.PutObjectInput{
