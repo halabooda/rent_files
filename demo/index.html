@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title></title>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link href="https://releases.transloadit.com/uppy/v3.23.0/uppy.min.css" rel="stylesheet"
+    />
+</head>
+<body>
+
+<script>
+    let num = 1;
+
+    function updateInput(ish) {
+        num = Number(ish)
+    }
+</script>
+
+<!--<h3>Megabyte count</h3>-->
+<!--<input type="number" value="1" placeholder="Megabyte count" onchange="updateInput(this.value)"/>-->
+
+<noscript>You need JavaScript enabled for this example to work.</noscript>
+<button id="uppyModalOpener">Open Modal</button>
+
+<script type="module">
+    import {
+        Uppy,
+        Dashboard,
+        Webcam,
+        Tus,
+        GoldenRetriever,
+    } from 'https://releases.transloadit.com/uppy/v3.23.0/uppy.min.mjs'
+
+
+    const uppy = new Uppy({
+        debug: true,
+        autoProceed: true,
+        meta: {
+            filename: "meta.json",
+            filetype: "application/json",
+            id: "231",
+            recordType: "single" // "multi"
+        },
+
+        onBeforeUpload: (files) => {
+            console.log("Chunk size: " + num + "Mb")
+        },
+    })
+        .use(Dashboard, {trigger: '#uppyModalOpener'})
+        .use(Webcam, {target: Dashboard})
+        .use(Tus, {
+            endpoint: 'http://127.0.0.1:8080/files',
+            headers: {
+                "Upload-Token": `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzIzNjY5NzU2LCJpYXQiOjE3MjM2NjYxNTYsImlzcyI6Imh0dHA6Ly8xMjcuMC4wLjE6NTQzMjEvYXV0aC92MSIsInN1YiI6IjFkNDdlOTI5LTY3YzMtNDFiZS1hNDI1LTYwYWM5MzFiZDRiZSIsImVtYWlsIjoiaGVsbG9AbWFrc2ZlZG9yb3YucnUiLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImdpdGh1YiIsInByb3ZpZGVycyI6WyJnaXRodWIiXX0sInVzZXJfbWV0YWRhdGEiOnsiYXZhdGFyX3VybCI6Imh0dHBzOi8vYXZhdGFycy5naXRodWJ1c2VyY29udGVudC5jb20vdS8xMTIyMzk4Nz92PTQiLCJlbWFpbCI6Im1ha3NmZWRvcm92cnVAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsImZ1bGxfbmFtZSI6Ik1ha3NpbSIsImlzcyI6Imh0dHBzOi8vYXBpLmdpdGh1Yi5jb20iLCJuYW1lIjoiTWFrc2ltIiwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJNYWtzY2x1YiIsInByb3ZpZGVyX2lkIjoiMTEyMjM5ODciLCJzdWIiOiIxMTIyMzk4NyIsInVzZXJfbmFtZSI6Ik1ha3NjbHViIn0sInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiYWFsIjoiYWFsMSIsImFtciI6W3sibWV0aG9kIjoib2F1dGgiLCJ0aW1lc3RhbXAiOjE3MjM1NjU5NzV9XSwic2Vzc2lvbl9pZCI6IjhiYzdlYzBiLTA1OGYtNGIwMy04NDVjLWZlYTdkZmU4YmU3MSIsImlzX2Fub255bW91cyI6ZmFsc2V9.dkpvxE_NOhnveDiQPZNl9UJH3LknS9BZjw06pTPfHG8`,
+            },
+        })
+    // .use(GoldenRetriever, { serviceWorker: true })
+
+    uppy.on('file-added', (file) => {
+        console.log('Added file', file);
+    });
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker
+            .register('/sandbox/test/sw.js')
+            .then((registration) => {
+                console.log('ServiceWorker registration successful with scope: ', registration.scope)
+            })
+            .catch((error) => {
+                console.log('Registration failed with ' + error)
+            })
+    }
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+/.var/
+/.docker/.var/
+.bin/
+
+.env.local
+
+/uploads/*
+!uploadse/.gitkeep
+/.s3data/
+/.ignore/
+*.iml
