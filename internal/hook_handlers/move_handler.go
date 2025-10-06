@@ -64,15 +64,15 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		return res, nil
 	}
 
-	recordID, ok := req.Event.Upload.MetaData["id"]
+	userID, ok := req.Event.Upload.MetaData["id"]
 	if !ok {
-		slog.Info("Record hasn't recordID in meta", "recordID", recordID)
+		slog.Info("Record hasn't userID in meta", "userID", userID)
 		return res, nil
 	}
 
 	filename, ok := req.Event.Upload.MetaData["filename"]
 	if !ok {
-		slog.Info("Record hasn't recordID in meta", "filename", filename)
+		slog.Info("Record hasn't userID in meta", "filename", filename)
 		return res, nil
 	}
 
@@ -89,7 +89,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 	id := req.Event.Upload.ID
 	uploadId, _ := splitIds(id)
 
-	err = g.move(context.Background(), uploadId, recordID, filename, contentType, replace)
+	err = g.move(context.Background(), uploadId, userID, filename, contentType, replace)
 
 	if err != nil {
 		slog.Error("Move failed", "err", err.Error())
@@ -100,9 +100,9 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 }
 
 /*
-Перемещаем все наши записи в /{recordId}/... файлы записями
+Перемещаем все наши записи в /{userID}/... файлы записями
 */
-func (g *MoveHandler) move(ctx context.Context, uploadId, recordID, filename, contentType string, replace string) error {
+func (g *MoveHandler) move(ctx context.Context, uploadId, userID, filename, contentType string, replace string) error {
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
@@ -124,12 +124,12 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, recordID, filename, co
 	}
 
 	if replace != "" {
-		g.deleteExists(ctx, recordID, replace)
+		g.deleteExists(ctx, userID, replace)
 	}
 
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
-		Key:         aws.String(fmt.Sprintf("%s/%s", recordID, filename)),
+		Key:         aws.String(fmt.Sprintf("%s/%s", userID, filename)),
 		Body:        file,
 		ACL:         types.ObjectCannedACLPublicRead,
 		ContentType: aws.String(contentType),
@@ -148,14 +148,14 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, recordID, filename, co
 	return nil
 }
 
-func (g *MoveHandler) deleteExists(ctx context.Context, recordID, replace string) {
+func (g *MoveHandler) deleteExists(ctx context.Context, userID, replace string) {
 	_, err := g.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(g.config.ResultBucket),
-		Key:    aws.String(fmt.Sprintf("%s/%s", recordID, replace)),
+		Key:    aws.String(fmt.Sprintf("%s/%s", userID, replace)),
 	})
 
 	if err != nil {
-		slog.Warn("Exists err", "filename", fmt.Sprintf("%s/%s", recordID, replace))
+		slog.Warn("Exists err", "filename", fmt.Sprintf("%s/%s", userID, replace))
 		return
 	}
 }
