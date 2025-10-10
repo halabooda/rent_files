@@ -146,7 +146,7 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	watermarkFile, err := os.Open("/usr/local/share/watermark65.png")
+	watermarkFile, err := os.Open("/usr/local/share/watermark60.png")
 	if err != nil {
 		return err
 	}
