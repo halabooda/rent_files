@@ -181,7 +181,6 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 
 		tmpFile = jpegFile
 		contentType = "image/jpeg"
-		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
 	} else {
 		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 			return err
