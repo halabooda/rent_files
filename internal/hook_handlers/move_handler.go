@@ -150,10 +150,17 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		"-i", tmpFile.Name(),
 		"-i", "/usr/local/share/watermark.png",
 		"-filter_complex",
-		"[1:v][0:v]scale2ref=w=iw:h=-1[wm][original];"+
-			"[wm]split=10[wm0][wm1][wm2][wm3][wm4][wm5][wm6][wm7][wm8][wm9];"+
-			"[wm0][wm1][wm2][wm3][wm4][wm5][wm6][wm7][wm8][wm9]vstack=inputs=10[wm_tiled];"+
-			"[original][wm_tiled]overlay=0:0:shortest=1",
+		"[1:v][0:v]scale2ref=w=iw:h=-1[wm][base];"+
+			"[base][wm]overlay=0:0[tmp1];"+
+			"[tmp1][wm]overlay=0:H/10[tmp2];"+
+			"[tmp2][wm]overlay=0:H/10*2[tmp3];"+
+			"[tmp3][wm]overlay=0:H/10*3[tmp4];"+
+			"[tmp4][wm]overlay=0:H/10*4[tmp5];"+
+			"[tmp5][wm]overlay=0:H/10*5[tmp6];"+
+			"[tmp6][wm]overlay=0:H/10*6[tmp7];"+
+			"[tmp7][wm]overlay=0:H/10*7[tmp8];"+
+			"[tmp8][wm]overlay=0:H/10*8[tmp9];"+
+			"[tmp9][wm]overlay=0:H/10*9",
 		"-y", outputFileName,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
