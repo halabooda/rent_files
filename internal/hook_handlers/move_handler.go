@@ -3,12 +3,14 @@ package hook_handlers
 import (
 	"context"
 	"fmt"
+	"github.com/disintegration/imaging"
 	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -138,47 +140,62 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	outputFile, err := ioutil.TempFile("", fmt.Sprintf("tusd-s3-watermarked-*%s", ext))
+	// === ЛОГИКА ВОДЯНОГО ЗНАКА ===
+	img, _, err := image.Decode(tmpFile)
 	if err != nil {
 		return err
 	}
-	outputFileName := outputFile.Name()
-	_ = outputFile.Close()
-	defer cleanUpTempFile(outputFile)
 
-	cmd := exec.Command("ffmpeg",
-		"-i", tmpFile.Name(),
-		"-i", "/usr/local/share/watermark.png",
-		"-filter_complex",
-		"[1:v][0:v]scale2ref=w=iw:h=-1[wm][base];"+
-			"[base][wm]overlay=0:0[tmp1];"+
-			"[tmp1][wm]overlay=0:H/10[tmp2];"+
-			"[tmp2][wm]overlay=0:H/10*2[tmp3];"+
-			"[tmp3][wm]overlay=0:H/10*3[tmp4];"+
-			"[tmp4][wm]overlay=0:H/10*4[tmp5];"+
-			"[tmp5][wm]overlay=0:H/10*5[tmp6];"+
-			"[tmp6][wm]overlay=0:H/10*6[tmp7];"+
-			"[tmp7][wm]overlay=0:H/10*7[tmp8];"+
-			"[tmp8][wm]overlay=0:H/10*8[tmp9];"+
-			"[tmp9][wm]overlay=0:H/10*9",
-		"-y", outputFileName,
-	)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ffmpeg error: %v, output: %s", err, string(output))
-	}
-
-	finalFile, err := os.Open(outputFileName)
+	watermarkFile, err := os.Open("/usr/local/share/watermark.png")
 	if err != nil {
 		return err
 	}
-	defer func(finalFile *os.File) {
-		_ = finalFile.Close()
-	}(finalFile)
+	defer watermarkFile.Close()
+
+	watermark, _, err := image.Decode(watermarkFile)
+	if err != nil {
+		return err
+	}
+
+	wWidth := img.Bounds().Dx()
+	scale := float64(wWidth) / float64(watermark.Bounds().Dx())
+	wHeight := int(float64(watermark.Bounds().Dy()) * scale)
+	resizedWatermark := imaging.Resize(watermark, wWidth, wHeight, imaging.Lanczos)
+
+	result := imaging.Clone(img)
+
+	for y := 0; y < img.Bounds().Dy(); y += wHeight {
+		draw.Draw(result, image.Rect(0, y, wWidth, y+wHeight), resizedWatermark, image.Point{}, draw.Over)
+	}
+
+	if err := tmpFile.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		return err
+	}
+
+	if ext == ".png" {
+		if err := png.Encode(tmpFile, result); err != nil {
+			return err
+		}
+		contentType = "image/png"
+	} else {
+		if err := jpeg.Encode(tmpFile, result, &jpeg.Options{Quality: 90}); err != nil {
+			return err
+		}
+		contentType = "image/jpeg"
+	}
+
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		return err
+	}
+	// === КОНЕЦ ЛОГИКИ ВОДЯНОГО ЗНАКА ===
 
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
 		Key:         aws.String(fmt.Sprintf("%s/%s", entityId, filename)),
-		Body:        finalFile,
+		Body:        tmpFile,
 		ACL:         types.ObjectCannedACLPublicRead,
 		ContentType: aws.String(contentType),
 	}
