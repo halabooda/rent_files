@@ -150,8 +150,8 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		"-i", tmpFile.Name(),
 		"-i", "/usr/local/share/watermark.png",
 		"-filter_complex",
-		"[1:v]scale=w=main_w:h=-1[wm];"+ // растягиваем/сжимаем на всю ширину
-			"[wm]tile=1x0[wm_tiled];"+ // повторяем вертикально
+		"[1:v]scale=w=main_w:h=-1[wm];"+
+			"[wm]tile=layout=1x9999[wm_tiled];"+ // 1 колонка, много строк
 			"[0:v][wm_tiled]overlay=0:0:shortest=1",
 		"-y", outputFileName,
 	)
