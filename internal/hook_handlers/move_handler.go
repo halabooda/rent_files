@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	appConfig "codiewuploader/internal/config"
@@ -108,6 +109,15 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 Перемещаем все наши записи в /{id}/... файлы записями
 */
 func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string) error {
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".jpeg":
+		ext = ".jpg"
+	case ".png", ".jpg":
+	default:
+		ext = ".jpg"
+	}
+
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
@@ -128,7 +138,7 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	outputFile, err := ioutil.TempFile("", "tusd-s3-watermarked-")
+	outputFile, err := ioutil.TempFile("", fmt.Sprintf("tusd-s3-watermarked-*%s", ext))
 	if err != nil {
 		return err
 	}
