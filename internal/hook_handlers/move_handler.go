@@ -147,9 +147,13 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 	defer cleanUpTempFile(outputFile)
 
 	cmd := exec.Command("ffmpeg",
-		"-i", tmpFile.Name(),
-		"-i", "/usr/local/share/watermark.png",
-		"-filter_complex", "[1]scale=w=iw:h=-1[wm];[0][wm]overlay=0:0",
+		"-i", tmpFile.Name(), // исходная картинка
+		"-i", "/usr/local/share/watermark.png", // водяной знак
+		"-filter_complex",
+		"[1]scale=iw*min(1\\,main_w/iw):-1[wm];"+ // масштабируем по ширине
+			"color=c=black@0:s=main_wxmain_h[bg];"+ // прозрачный фон
+			"[bg][wm]overlay=0:0:shortest=1,tile=1x0[wm_tiled];"+ // повторяем по вертикали
+			"[0][wm_tiled]overlay=0:0",
 		"-y", outputFileName,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
