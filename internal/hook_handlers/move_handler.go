@@ -85,7 +85,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		contentType = ""
 	}
 
-	isHeicString, ok := req.Event.Upload.MetaData["isHeic"]
+	isHeicString, ok := req.Event.Upload.MetaData["isHeicString"]
 	if !ok {
 		isHeicString = "false"
 	}
@@ -142,8 +142,8 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	//if strings.HasSuffix(strings.ToLower(filename), ".heic") {
-	if isHeic {
+	if strings.HasSuffix(strings.ToLower(filename), ".heic") {
+		//if isHeic {
 		img, err := goheif.Decode(tmpFile)
 		if err != nil {
 			return fmt.Errorf("decode HEIC failed: %w", err)
@@ -181,6 +181,7 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 
 		tmpFile = jpegFile
 		contentType = "image/jpeg"
+		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
 	} else {
 		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 			return err
