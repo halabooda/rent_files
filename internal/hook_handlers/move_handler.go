@@ -150,9 +150,10 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		"-i", tmpFile.Name(),
 		"-i", "/usr/local/share/watermark.png",
 		"-filter_complex",
-		"[1:v]scale=w=main_w:h=-1[wm];"+
-			"[wm]tile=layout=1x9999[wm_tiled];"+ // 1 колонка, много строк
-			"[0:v][wm_tiled]overlay=0:0:shortest=1",
+		"[1:v][0:v]scale2ref=w=iw:h=-1[wm][original];"+
+			"[wm]split=10[wm0][wm1][wm2][wm3][wm4][wm5][wm6][wm7][wm8][wm9];"+
+			"[wm0][wm1][wm2][wm3][wm4][wm5][wm6][wm7][wm8][wm9]vstack=inputs=10[wm_tiled];"+
+			"[original][wm_tiled]overlay=0:0:shortest=1",
 		"-y", outputFileName,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
