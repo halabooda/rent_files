@@ -24,6 +24,7 @@ func NewHandler(s3Endpoint string) *Handler {
 	return &Handler{
 		handlers: []hooks.HookHandler{
 			NewAuthHandler(config),
+			NewHeicConverterHandler(config),
 			//NewFinishHandler(config),
 			NewMoveHandler(config),
 			NewFfmpegConvertHandler(config),

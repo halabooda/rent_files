@@ -2,8 +2,8 @@ package hook_handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/jdeng/goheif"
 	"github.com/tus/tusd/v2/pkg/hooks"
 	"golang.org/x/exp/slog"
 )
@@ -64,15 +65,15 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		return res, nil
 	}
 
-	userID, ok := req.Event.Upload.MetaData["id"]
+	entityId, ok := req.Event.Upload.MetaData["id"]
 	if !ok {
-		slog.Info("Record hasn't userID in meta", "userID", userID)
+		slog.Info("Record hasn't entityId in meta", "entityId", entityId)
 		return res, nil
 	}
 
 	filename, ok := req.Event.Upload.MetaData["filename"]
 	if !ok {
-		slog.Info("Record hasn't userID in meta", "filename", filename)
+		slog.Info("Record hasn't entityId in meta", "filename", filename)
 		return res, nil
 	}
 
@@ -88,11 +89,11 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		"debug move info",
 		"filename", filename,
 		"contentType", contentType,
-		"userID", userID,
+		"entityId", entityId,
 		"uploadId", uploadId,
 	)
 
-	err = g.move(context.Background(), uploadId, userID, filename, contentType)
+	err = g.move(context.Background(), uploadId, entityId, filename, contentType)
 
 	if err != nil {
 		slog.Error("Move failed", "err", err.Error())
@@ -103,33 +104,64 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 }
 
 /*
-Перемещаем все наши записи в /{userID}/... файлы записями
+Перемещаем все наши записи в /{id}/... файлы записями
 */
-func (g *MoveHandler) move(ctx context.Context, uploadId, userID, filename, contentType string) error {
+func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string) error {
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
 	})
 
-	file, err := ioutil.TempFile("", "tusd-s3-concat-tmp-")
+	tmpFile, err := ioutil.TempFile("", "tusd-s3-concat-tmp-")
 	if err != nil {
 		return err
 	}
-	defer cleanUpTempFile(file)
+	defer cleanUpTempFile(tmpFile)
 
-	if _, err := io.Copy(file, res.Body); err != nil {
+	if _, err := io.Copy(tmpFile, res.Body); err != nil {
 		return err
 	}
 
-	_, err = file.Seek(0, 0)
+	_, err = tmpFile.Seek(0, 0)
 	if err != nil {
 		return err
+	}
+
+	if strings.HasSuffix(strings.ToLower(filename), ".heic") {
+		img, err := goheif.Decode(tmpFile)
+		if err != nil {
+			return fmt.Errorf("decode HEIC failed: %w", err)
+		}
+
+		// Создаём новый временный файл для JPEG
+		jpegFile, err := ioutil.TempFile("", "tusd-s3-concat-jpeg-")
+		if err != nil {
+			return err
+		}
+		defer cleanUpTempFile(jpegFile)
+
+		if err := jpeg.Encode(jpegFile, img, &jpeg.Options{Quality: 90}); err != nil {
+			return err
+		}
+
+		if _, err := jpegFile.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+
+		tmpFile = jpegFile
+		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
+		contentType = "image/jpeg"
+	} else {
+		// Вернуть tmpFile в начало, если не HEIC
+		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
 	}
 
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
-		Key:         aws.String(fmt.Sprintf("%s/%s", userID, filename)),
-		Body:        file,
+		Key:         aws.String(fmt.Sprintf("%s/%s", entityId, filename)),
+		Body:        tmpFile,
 		ACL:         types.ObjectCannedACLPublicRead,
 		ContentType: aws.String(contentType),
 	}
@@ -173,33 +205,4 @@ func splitIds(id string) (uploadId, multipartId string) {
 	uploadId = id[:index]
 	multipartId = id[index+1:]
 	return
-}
-
-func jsonBinaryToString(reader io.ReadCloser) (*string, interface{}, error) {
-	// Чтение данных из ReadCloser
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Закрытие ReadCloser
-	defer reader.Close()
-
-	// Преобразование JSON в map[string]interface{} (если структура неизвестна)
-	var result map[string]interface{}
-	err = json.Unmarshal(data, &result)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Преобразование обратно в строку JSON (если это необходимо)
-	jsonString, err := json.Marshal(result)
-	if err != nil {
-		fmt.Println("Error marshaling:", err)
-		return nil, nil, err
-	}
-
-	res := string(jsonString)
-
-	return &res, result, nil
 }

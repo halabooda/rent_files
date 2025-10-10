@@ -5,7 +5,7 @@ RUN ls -la
 
 # Add gcc and libc-dev early so it is cached
 RUN set -xe \
-	&& apk add --no-cache gcc libc-dev
+	&& apk add --no-cache gcc libc-dev build-base libheif-dev libde265-dev
 
 # Install dependencies earlier so they are cached between builds
 COPY go.mod go.sum ./
@@ -39,7 +39,7 @@ COPY ./docker/load-env.sh /usr/local/share/load-env.sh
 COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/bin/
 COPY --from=mwader/static-ffmpeg:7.1 /ffprobe /usr/bin/
 
-RUN apk add --no-cache ca-certificates jq bash \
+RUN apk add --no-cache ca-certificates jq bash libstdc++ libgcc \
     && addgroup -g 1000 tusd \
     && adduser -u 1000 -G tusd -s /bin/sh -D tusd \
     && mkdir -p /srv/tusd-hooks \
