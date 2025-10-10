@@ -85,7 +85,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		contentType = ""
 	}
 
-	isHeicString, ok := req.Event.Upload.MetaData["isHeicString"]
+	isHeicString, ok := req.Event.Upload.MetaData["isHeic"]
 	if !ok {
 		isHeicString = "false"
 	}
