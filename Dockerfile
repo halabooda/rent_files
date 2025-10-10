@@ -36,6 +36,9 @@ WORKDIR /srv/tusd-data
 COPY ./docker/entrypoint.sh /usr/local/share/docker-entrypoint.sh
 COPY ./docker/load-env.sh /usr/local/share/load-env.sh
 COPY ./assets/watermark.png /usr/local/share/watermark.png
+COPY ./assets/watermark65.png /usr/local/share/watermark65.png
+COPY ./assets/watermark65.png /usr/local/share/watermark65.png
+COPY ./assets/watermark75.png /usr/local/share/watermark75.png
 
 COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/bin/
 COPY --from=mwader/static-ffmpeg:7.1 /ffprobe /usr/bin/

@@ -146,7 +146,7 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	watermarkFile, err := os.Open("/usr/local/share/watermark.png")
+	watermarkFile, err := os.Open("/usr/local/share/watermark65.png")
 	if err != nil {
 		return err
 	}
@@ -164,9 +164,11 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 
 	result := imaging.Clone(img)
 
-	for y := 0; y < img.Bounds().Dy(); y += wHeight {
-		draw.Draw(result, image.Rect(0, y, wWidth, y+wHeight), resizedWatermark, image.Point{}, draw.Over)
-	}
+	// Вычисляем координаты центра
+	x := 0 // по ширине мы масштабировали водяной знак на всю ширину
+	y := (img.Bounds().Dy() - wHeight) / 2
+
+	draw.Draw(result, image.Rect(x, y, x+wWidth, y+wHeight), resizedWatermark, image.Point{}, draw.Over)
 
 	if err := tmpFile.Truncate(0); err != nil {
 		return err
