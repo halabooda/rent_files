@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"image/jpeg"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 
 	appConfig "codiewuploader/internal/config"
@@ -17,8 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/jdeng/goheif"
-	"github.com/rwcarlsen/goexif/exif"
 	"github.com/tus/tusd/v2/pkg/hooks"
 	"golang.org/x/exp/slog"
 	"golang.org/x/image/draw"
@@ -85,16 +83,6 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		contentType = ""
 	}
 
-	isHeicString, ok := req.Event.Upload.MetaData["isHeicString"]
-	if !ok {
-		isHeicString = "false"
-	}
-
-	isHeic := false
-	if isHeicString == "true" {
-		isHeic = true
-	}
-
 	id := req.Event.Upload.ID
 	uploadId, _ := splitIds(id)
 
@@ -104,11 +92,9 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		"contentType", contentType,
 		"entityId", entityId,
 		"uploadId", uploadId,
-		"isHeicString", isHeicString,
-		"isHeic", isHeic,
 	)
 
-	err = g.move(context.Background(), uploadId, entityId, filename, contentType, isHeic)
+	err = g.move(context.Background(), uploadId, entityId, filename, contentType)
 
 	if err != nil {
 		slog.Error("Move failed", "err", err.Error())
@@ -121,7 +107,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 /*
 Перемещаем все наши записи в /{id}/... файлы записями
 */
-func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string, isHeic bool) error {
+func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string) error {
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
@@ -142,56 +128,37 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	if strings.HasSuffix(strings.ToLower(filename), ".heic") {
-		//if isHeic {
-		img, err := goheif.Decode(tmpFile)
-		if err != nil {
-			return fmt.Errorf("decode HEIC failed: %w", err)
-		}
-
-		// Читаем EXIF ориентацию
-		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-		exifData, _ := exif.Decode(tmpFile)
-		orientation := 1
-		if exifData != nil {
-			if tag, err := exifData.Get(exif.Orientation); err == nil {
-				orientation, _ = tag.Int(0)
-			}
-		}
-
-		// Применяем ориентацию
-		img = applyOrientation(img, orientation)
-
-		// Создаём новый временный файл для JPEG
-		jpegFile, err := ioutil.TempFile("", "tusd-s3-concat-jpeg-")
-		if err != nil {
-			return err
-		}
-		defer cleanUpTempFile(jpegFile)
-
-		if err := jpeg.Encode(jpegFile, img, &jpeg.Options{Quality: 90}); err != nil {
-			return err
-		}
-
-		if _, err := jpegFile.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-
-		tmpFile = jpegFile
-		contentType = "image/jpeg"
-		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
-	} else {
-		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
+	outputFile, err := ioutil.TempFile("", "tusd-s3-watermarked-")
+	if err != nil {
+		return err
 	}
+	outputFileName := outputFile.Name()
+	_ = outputFile.Close()
+	defer cleanUpTempFile(outputFile)
+
+	cmd := exec.Command("ffmpeg",
+		"-i", tmpFile.Name(),
+		"-i", "/usr/local/share/watermark.png",
+		"-filter_complex", "overlay=W-w-10:H-h-10",
+		"-codec:a", "copy",
+		"-y", outputFileName,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg error: %v, output: %s", err, string(output))
+	}
+
+	finalFile, err := os.Open(outputFileName)
+	if err != nil {
+		return err
+	}
+	defer func(finalFile *os.File) {
+		_ = finalFile.Close()
+	}(finalFile)
 
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
 		Key:         aws.String(fmt.Sprintf("%s/%s", entityId, filename)),
-		Body:        tmpFile,
+		Body:        finalFile,
 		ACL:         types.ObjectCannedACLPublicRead,
 		ContentType: aws.String(contentType),
 	}
