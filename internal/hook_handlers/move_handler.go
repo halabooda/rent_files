@@ -3,6 +3,7 @@ package hook_handlers
 import (
 	"context"
 	"fmt"
+	"image"
 	"image/jpeg"
 	"io"
 	"io/ioutil"
@@ -17,8 +18,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/jdeng/goheif"
+	"github.com/rwcarlsen/goexif/exif"
 	"github.com/tus/tusd/v2/pkg/hooks"
 	"golang.org/x/exp/slog"
+	"golang.org/x/image/draw"
 )
 
 const SwampDir = "rent_swamp"
@@ -82,6 +85,16 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		contentType = ""
 	}
 
+	isHeicString, ok := req.Event.Upload.MetaData["isHeicString"]
+	if !ok {
+		isHeicString = "false"
+	}
+
+	isHeic := false
+	if isHeicString == "true" {
+		isHeic = true
+	}
+
 	id := req.Event.Upload.ID
 	uploadId, _ := splitIds(id)
 
@@ -91,9 +104,11 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		"contentType", contentType,
 		"entityId", entityId,
 		"uploadId", uploadId,
+		"isHeicString", isHeicString,
+		"isHeic", isHeic,
 	)
 
-	err = g.move(context.Background(), uploadId, entityId, filename, contentType)
+	err = g.move(context.Background(), uploadId, entityId, filename, contentType, isHeic)
 
 	if err != nil {
 		slog.Error("Move failed", "err", err.Error())
@@ -106,7 +121,7 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 /*
 Перемещаем все наши записи в /{id}/... файлы записями
 */
-func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string) error {
+func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string, isHeic bool) error {
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(SwampDir),
 		Key:    aws.String(uploadId),
@@ -127,11 +142,27 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	if strings.HasSuffix(strings.ToLower(filename), ".heic") {
+	//if strings.HasSuffix(strings.ToLower(filename), ".heic") {
+	if isHeic {
 		img, err := goheif.Decode(tmpFile)
 		if err != nil {
 			return fmt.Errorf("decode HEIC failed: %w", err)
 		}
+
+		// Читаем EXIF ориентацию
+		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		exifData, _ := exif.Decode(tmpFile)
+		orientation := 1
+		if exifData != nil {
+			if tag, err := exifData.Get(exif.Orientation); err == nil {
+				orientation, _ = tag.Int(0)
+			}
+		}
+
+		// Применяем ориентацию
+		img = applyOrientation(img, orientation)
 
 		// Создаём новый временный файл для JPEG
 		jpegFile, err := ioutil.TempFile("", "tusd-s3-concat-jpeg-")
@@ -149,10 +180,9 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		}
 
 		tmpFile = jpegFile
-		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
 		contentType = "image/jpeg"
+		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
 	} else {
-		// Вернуть tmpFile в начало, если не HEIC
 		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
@@ -205,4 +235,75 @@ func splitIds(id string) (uploadId, multipartId string) {
 	uploadId = id[:index]
 	multipartId = id[index+1:]
 	return
+}
+
+// applyOrientation корректирует изображение по EXIF ориентации
+func applyOrientation(src image.Image, orientation int) image.Image {
+	bounds := src.Bounds()
+	dst := image.NewRGBA(bounds)
+
+	switch orientation {
+	case 2: // зеркально по горизонтали
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				dst.Set(bounds.Max.X-x-1, y, src.At(x, y))
+			}
+		}
+	case 3: // перевернуть 180
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				dst.Set(bounds.Max.X-x-1, bounds.Max.Y-y-1, src.At(x, y))
+			}
+		}
+	case 4: // зеркально по вертикали
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				dst.Set(x, bounds.Max.Y-y-1, src.At(x, y))
+			}
+		}
+	case 5: // зеркально + поворот 90
+		dst = rotate90(src, true)
+	case 6: // поворот 90
+		dst = rotate90(src, false)
+	case 7: // зеркально + поворот 270
+		dst = rotate270(src, true)
+	case 8: // поворот 270
+		dst = rotate270(src, false)
+	default: // ориентация 1 — без изменений
+		draw.Draw(dst, bounds, src, bounds.Min, draw.Src)
+	}
+
+	return dst
+}
+
+func rotate90(src image.Image, flip bool) *image.RGBA {
+	b := src.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dy(), b.Dx()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			px := src.At(x, y)
+			if flip {
+				dst.Set(y, b.Max.X-x-1, px)
+			} else {
+				dst.Set(y, x, px)
+			}
+		}
+	}
+	return dst
+}
+
+func rotate270(src image.Image, flip bool) *image.RGBA {
+	b := src.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dy(), b.Dx()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			px := src.At(x, y)
+			if flip {
+				dst.Set(b.Dy()-y-1, b.Max.X-x-1, px)
+			} else {
+				dst.Set(b.Dy()-y-1, x, px)
+			}
+		}
+	}
+	return dst
 }
