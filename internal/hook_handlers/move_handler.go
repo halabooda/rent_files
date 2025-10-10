@@ -149,8 +149,12 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 	cmd := exec.Command("ffmpeg",
 		"-i", tmpFile.Name(),
 		"-i", "/usr/local/share/watermark.png",
-		"-filter_complex", "overlay=W-w-10:H-h-10",
-		"-codec:a", "copy",
+		"-filter_complex", `
+        tile=1x1 [base];
+        [1][base]scale2ref=w=iw:h=oh[wm][base];
+        [base][wm]loop=999:size=1:start=0,tile=iw/overlay_w:1[pattern];
+        [pattern][wm]overlay=0:0:repeatlast=1
+    `,
 		"-y", outputFileName,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
