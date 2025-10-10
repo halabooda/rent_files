@@ -3,9 +3,6 @@ package hook_handlers
 import (
 	"context"
 	"fmt"
-	"github.com/jdeng/goheif"
-	"github.com/rwcarlsen/goexif/exif"
-	"image"
 	"image/jpeg"
 	"io"
 	"io/ioutil"
@@ -15,12 +12,11 @@ import (
 
 	appConfig "codiewuploader/internal/config"
 
-	"github.com/disintegration/imaging"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/jdeng/goheif"
 	"github.com/tus/tusd/v2/pkg/hooks"
 	"golang.org/x/exp/slog"
 )
@@ -131,27 +127,36 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
-	// --- Начало HEIC конвертации ---
 	if strings.HasSuffix(strings.ToLower(filename), ".heic") {
-		jpegTmpFile, err := ioutil.TempFile("", "tusd-s3-concat-jpeg-")
+		img, err := goheif.Decode(tmpFile)
+		if err != nil {
+			return fmt.Errorf("decode HEIC failed: %w", err)
+		}
+
+		// Создаём новый временный файл для JPEG
+		jpegFile, err := ioutil.TempFile("", "tusd-s3-concat-jpeg-")
 		if err != nil {
 			return err
 		}
-		defer cleanUpTempFile(jpegTmpFile)
+		defer cleanUpTempFile(jpegFile)
 
-		err = ConvertHEICtoJPEG(tmpFile, jpegTmpFile)
-		if err != nil {
+		if err := jpeg.Encode(jpegFile, img, &jpeg.Options{Quality: 90}); err != nil {
 			return err
 		}
 
-		if _, err := jpegTmpFile.Seek(0, io.SeekStart); err != nil {
+		if _, err := jpegFile.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
 
+		tmpFile = jpegFile
 		filename = strings.TrimSuffix(filename, ".heic") + ".jpg"
 		contentType = "image/jpeg"
+	} else {
+		// Вернуть tmpFile в начало, если не HEIC
+		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
 	}
-	// --- Конец HEIC конвертации ---
 
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
@@ -200,46 +205,4 @@ func splitIds(id string) (uploadId, multipartId string) {
 	uploadId = id[:index]
 	multipartId = id[index+1:]
 	return
-}
-
-func ConvertHEICtoJPEG(input io.ReadSeeker, output io.Writer) error {
-	img, err := goheif.Decode(input)
-	if err != nil {
-		return fmt.Errorf("decode HEIC failed: %w", err)
-	}
-
-	if _, err := input.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	ex, err := exif.Decode(input)
-	if err == nil {
-		if orientTag, err := ex.Get(exif.Orientation); err == nil {
-			if orientInt, err := orientTag.Int(0); err == nil {
-				img = applyOrientation(img, orientInt)
-			}
-		}
-	}
-
-	return jpeg.Encode(output, img, &jpeg.Options{Quality: 90})
-}
-
-func applyOrientation(img image.Image, orientation int) image.Image {
-	switch orientation {
-	case 2:
-		return imaging.FlipH(img)
-	case 3:
-		return imaging.Rotate180(img)
-	case 4:
-		return imaging.FlipV(img)
-	case 5:
-		return imaging.Transpose(img)
-	case 6:
-		return imaging.Rotate90(img)
-	case 7:
-		return imaging.Transverse(img)
-	case 8:
-		return imaging.Rotate270(img)
-	default:
-		return img
-	}
 }
