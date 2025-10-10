@@ -9,11 +9,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.3
 	github.com/bmizerany/pat v0.0.0-20210406213842-e4b6760bdd6f
+	github.com/disintegration/imaging v1.6.2
 	github.com/felixge/fgprof v0.9.4
 	github.com/form3tech-oss/jwt-go v3.2.2+incompatible
 	github.com/goji/httpauth v0.0.0-20160601135302-2da839ab0f4d
 	github.com/jdeng/goheif v0.0.0-20251001174315-babb64285736
 	github.com/prometheus/client_golang v1.19.1
+	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	github.com/tus/tusd/v2 v2.4.0
 	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa
 )
@@ -51,6 +53,7 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tus/lockfile v1.2.0 // indirect
+	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect

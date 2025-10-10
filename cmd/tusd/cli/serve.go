@@ -120,6 +120,10 @@ func Serve() {
 		http.ServeFile(w, r, "./demo/index.html")
 	}))
 
+	mux.Handle("/maks", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Maks"))
+	}))
+
 	mux.Handle("/list/{bucket}/{recordId}/{filename}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		path := strings.TrimPrefix(r.URL.Path, "/list/")
