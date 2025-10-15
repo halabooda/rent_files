@@ -81,6 +81,12 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		return res, nil
 	}
 
+	mediaType, ok := req.Event.Upload.MetaData["mediatype"]
+	if !ok {
+		slog.Info("Record hasn't entityId in meta", "mediatype", filename)
+		return res, nil
+	}
+
 	contentType, ok := req.Event.Upload.MetaData["filetype"]
 	if !ok {
 		contentType = ""
@@ -95,9 +101,10 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 		"contentType", contentType,
 		"entityId", entityId,
 		"uploadId", uploadId,
+		"mediaType", mediaType,
 	)
 
-	err = g.move(context.Background(), uploadId, entityId, filename, contentType)
+	err = g.move(context.Background(), uploadId, entityId, filename, contentType, mediaType)
 
 	if err != nil {
 		slog.Error("Move failed", "err", err.Error())
@@ -110,14 +117,14 @@ func (g *MoveHandler) InvokeHook(req hooks.HookRequest) (res hooks.HookResponse,
 /*
 Перемещаем все наши записи в /{id}/... файлы записями
 */
-func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType string) error {
+func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, contentType, mediaType string) error {
 	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".jpeg":
-		ext = ".jpg"
-	case ".png", ".jpg":
-	default:
-		ext = ".jpg"
+	if mediaType == "image" {
+		switch ext {
+		case ".jpeg":
+			ext = ".jpg"
+		case ".png", ".jpg":
+		}
 	}
 
 	res, _ := g.s3Client.GetObject(ctx, &s3.GetObjectInput{
@@ -125,89 +132,105 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		Key:    aws.String(uploadId),
 	})
 
-	tmpFile, err := ioutil.TempFile("", "tusd-s3-concat-tmp-")
+	originalFile, err := ioutil.TempFile("", "tusd-s3-concat-tmp-")
 	if err != nil {
 		return err
 	}
-	defer cleanUpTempFile(tmpFile)
+	defer cleanUpTempFile(originalFile)
 
-	if _, err := io.Copy(tmpFile, res.Body); err != nil {
+	if _, err := io.Copy(originalFile, res.Body); err != nil {
 		return err
 	}
 
-	_, err = tmpFile.Seek(0, 0)
+	_, err = originalFile.Seek(0, 0)
 	if err != nil {
 		return err
 	}
-
-	// === ЛОГИКА ВОДЯНОГО ЗНАКА ===
-	img, _, err := image.Decode(tmpFile)
-	if err != nil {
-		return err
-	}
-
-	watermarkFile, err := os.Open("/usr/local/share/watermark60.png")
-	if err != nil {
-		return err
-	}
-	defer watermarkFile.Close()
-
-	watermark, _, err := image.Decode(watermarkFile)
-	if err != nil {
-		return err
-	}
-
-	wWidth := img.Bounds().Dx()
-	scale := float64(wWidth) / float64(watermark.Bounds().Dx())
-	wHeight := int(float64(watermark.Bounds().Dy()) * scale)
-	resizedWatermark := imaging.Resize(watermark, wWidth, wHeight, imaging.Lanczos)
-
-	result := imaging.Clone(img)
-
-	// Вычисляем координаты центра
-	x := 0 // по ширине мы масштабировали водяной знак на всю ширину
-	y := (img.Bounds().Dy() - wHeight) / 2
-
-	draw.Draw(result, image.Rect(x, y, x+wWidth, y+wHeight), resizedWatermark, image.Point{}, draw.Over)
-
-	if err := tmpFile.Truncate(0); err != nil {
-		return err
-	}
-	if _, err := tmpFile.Seek(0, 0); err != nil {
-		return err
-	}
-
-	if ext == ".png" {
-		if err := png.Encode(tmpFile, result); err != nil {
-			return err
-		}
-		contentType = "image/png"
-	} else {
-		if err := jpeg.Encode(tmpFile, result, &jpeg.Options{Quality: 90}); err != nil {
-			return err
-		}
-		contentType = "image/jpeg"
-	}
-
-	if _, err := tmpFile.Seek(0, 0); err != nil {
-		return err
-	}
-	// === КОНЕЦ ЛОГИКИ ВОДЯНОГО ЗНАКА ===
 
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
-		Key:         aws.String(fmt.Sprintf("%s/%s", entityId, filename)),
-		Body:        tmpFile,
+		Key:         aws.String(fmt.Sprintf("%s/original-%s", entityId, filename)),
+		Body:        originalFile,
 		ACL:         types.ObjectCannedACLPublicRead,
 		ContentType: aws.String(contentType),
-	}
-	if contentType != "" {
-		params.ContentType = aws.String(contentType)
 	}
 
 	_, err = g.s3Client.PutObject(ctx, params)
 	if err != nil {
 		return err
+	}
+
+	if _, err := originalFile.Seek(0, 0); err != nil {
+		return err
+	}
+
+	if mediaType == "image" {
+		// === ЛОГИКА ВОДЯНОГО ЗНАКА ===
+		img, _, err := image.Decode(originalFile)
+		if err != nil {
+			return err
+		}
+
+		watermarkFile, err := os.Open("/usr/local/share/watermark60.png")
+		if err != nil {
+			return err
+		}
+		defer watermarkFile.Close()
+
+		watermark, _, err := image.Decode(watermarkFile)
+		if err != nil {
+			return err
+		}
+
+		wWidth := img.Bounds().Dx()
+		scale := float64(wWidth) / float64(watermark.Bounds().Dx())
+		wHeight := int(float64(watermark.Bounds().Dy()) * scale)
+		resizedWatermark := imaging.Resize(watermark, wWidth, wHeight, imaging.Lanczos)
+
+		result := imaging.Clone(img)
+
+		// Вычисляем координаты центра
+		x := 0 // по ширине мы масштабировали водяной знак на всю ширину
+		y := (img.Bounds().Dy() - wHeight) / 2
+
+		draw.Draw(result, image.Rect(x, y, x+wWidth, y+wHeight), resizedWatermark, image.Point{}, draw.Over)
+
+		if err := originalFile.Truncate(0); err != nil {
+			return err
+		}
+		if _, err := originalFile.Seek(0, 0); err != nil {
+			return err
+		}
+
+		if ext == ".png" {
+			if err := png.Encode(originalFile, result); err != nil {
+				return err
+			}
+			contentType = "image/png"
+		} else {
+			if err := jpeg.Encode(originalFile, result, &jpeg.Options{Quality: 90}); err != nil {
+				return err
+			}
+			contentType = "image/jpeg"
+		}
+
+		if _, err := originalFile.Seek(0, 0); err != nil {
+			return err
+		}
+		// === КОНЕЦ ЛОГИКИ ВОДЯНОГО ЗНАКА ===
+
+		params := &s3.PutObjectInput{
+			Bucket:      aws.String(g.config.ResultBucket),
+			Key:         aws.String(fmt.Sprintf("%s/%s", entityId, filename)),
+			Body:        originalFile,
+			ACL:         types.ObjectCannedACLPublicRead,
+			ContentType: aws.String(contentType),
+		}
+
+		_, err = g.s3Client.PutObject(ctx, params)
+		if err != nil {
+			return err
+		}
 	}
 
 	// TODO:: (STEP_2) удалить файл и чанки и инфо, все старые файлы так как перемистили все, (вместе с шагом (STEP_1))
