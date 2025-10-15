@@ -147,9 +147,15 @@ func (g *MoveHandler) move(ctx context.Context, uploadId, entityId, filename, co
 		return err
 	}
 
+	originalName := fmt.Sprintf("%s/%s", entityId, filename)
+	// для картинок прячем названием за имя с id в название и промежуточным префиксом -original-
+	if mediaType == "image" {
+		originalName = fmt.Sprintf("%s/%s-original-%s", entityId, entityId, filename)
+	}
+
 	params := &s3.PutObjectInput{
 		Bucket:      aws.String(g.config.ResultBucket),
-		Key:         aws.String(fmt.Sprintf("%s/original-%s", entityId, filename)),
+		Key:         aws.String(originalName),
 		Body:        originalFile,
 		ACL:         types.ObjectCannedACLPublicRead,
 		ContentType: aws.String(contentType),
